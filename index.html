@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0d9488">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="АВПК">
+    <title>Учёт успеваемости — АВПК</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/jpeg" href="assets/logo.jpeg">
+    <link rel="apple-touch-icon" href="assets/logo.jpeg">
+</head>
+<body>
+
+<!-- ============================================ -->
+<!--          СТРАНИЦА ВХОДА / РЕГИСТРАЦИИ        -->
+<!-- ============================================ -->
+<div id="page-auth" class="page">
+    <div class="auth-wrapper">
+        <div class="auth-card">
+            <div class="auth-header">
+                <img src="assets/logo.jpeg" alt="АВПК" class="auth-logo">
+                <h1>Учёт успеваемости</h1>
+                <p class="muted">Актюбинский высший<br>политехнический колледж</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Вход</button>
+                <button class="auth-tab" data-tab="register">Регистрация</button>
+            </div>
+
+            <!-- Форма входа -->
+            <form id="form-login" class="auth-form">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="login-email" required placeholder="example@avpk.kz">
+                </div>
+                <div class="form-group">
+                    <label>Пароль</label>
+                    <input type="password" id="login-password" required minlength="6">
+                </div>
+                <div id="login-error" class="alert alert-danger" style="display:none"></div>
+                <button type="submit" class="btn btn-primary btn-block">Войти</button>
+            </form>
+
+            <!-- Форма регистрации -->
+            <form id="form-register" class="auth-form" style="display:none">
+                <div class="form-group">
+                    <label>ФИО *</label>
+                    <input type="text" id="reg-name" required placeholder="Иванов Иван Иванович">
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="reg-email" required placeholder="example@avpk.kz">
+                </div>
+                <div class="form-group">
+                    <label>Роль *</label>
+                    <select id="reg-role" required>
+                        <option value="">— выберите роль —</option>
+                        <option value="admin">Администратор</option>
+                        <option value="teacher">Преподаватель</option>
+                        <option value="student">Студент</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Пароль * (минимум 6 символов)</label>
+                    <input type="password" id="reg-password" required minlength="6">
+                </div>
+                <div id="register-error" class="alert alert-danger" style="display:none"></div>
+                <button type="submit" class="btn btn-primary btn-block">Зарегистрироваться</button>
+            </form>
+
+            <div class="auth-footer">
+                <small class="muted">© 2026 АВПК · Дипломный проект</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!--              ОСНОВНОЕ ПРИЛОЖЕНИЕ              -->
+<!-- ============================================ -->
+<div id="page-app" class="page" style="display:none">
+
+    <header class="header">
+        <div class="container header-inner">
+            <a href="#dashboard" class="logo">
+                <img src="assets/logo.jpeg" alt="АВПК" class="logo-img">
+                <span>АВПК · Учёт успеваемости</span>
+            </a>
+            <button class="menu-toggle" id="menu-toggle" aria-label="Меню">
+                <span></span>
+            </button>
+            <nav class="nav" id="main-nav">
+                <a href="#dashboard" class="nav-link" data-page="dashboard">Главная</a>
+                <a href="#students" class="nav-link" data-page="students" data-roles="admin,teacher">Студенты</a>
+                <a href="#groups" class="nav-link" data-page="groups" data-roles="admin,teacher">Группы</a>
+                <a href="#subjects" class="nav-link" data-page="subjects">Предметы</a>
+                <a href="#teachers" class="nav-link" data-page="teachers" data-roles="admin">Преподаватели</a>
+                <a href="#grades" class="nav-link" data-page="grades">Оценки</a>
+                <a href="#reports" class="nav-link" data-page="reports" data-roles="admin,teacher">Отчёты</a>
+            </nav>
+            <div class="user-menu">
+                <span class="user-info">
+                    <span class="user-role" id="user-role-badge"></span>
+                    <span class="user-name" id="user-name"></span>
+                </span>
+                <button class="btn btn-sm btn-outline" id="btn-logout">Выйти</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="container">
+            <div id="flash-container"></div>
+            <div id="page-content"></div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© 2026 Актюбинский высший политехнический колледж · Дипломный проект</p>
+        </div>
+    </footer>
+</div>
+
+<!-- Экран загрузки -->
+<div id="loader" class="loader">
+    <div class="loader-spinner"></div>
+</div>
+
+<!-- Скрипты -->
+<script type="module" src="js/firebase-config.js"></script>
+<script type="module" src="js/auth.js"></script>
+<script type="module" src="js/db.js"></script>
+<script type="module" src="js/pages.js"></script>
+<script type="module" src="js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+</body>
+</html>
