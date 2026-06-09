@@ -456,25 +456,27 @@ export async function renderStudents() {
         const v = e.target.value;
         location.hash = v ? `students?group=${v}` : "students";
     };
-
     if (canEdit) {
-        document.getElementById("form-add-student").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            try {
-                await db.create("students", {
-                    fullName: f.fullName.value.trim(),
-                    groupId: f.groupId.value,
-                    email: f.email.value.trim(),
-                    phone: f.phone.value.trim(),
-                    birthDate: f.birthDate.value || null
-                });
-                flash("Студент добавлен", "success");
-                renderStudents();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
+        const formAddStudent = document.getElementById("form-add-student");
+if (formAddStudent) {
+    formAddStudent.onsubmit = async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+            await db.create("students", {
+                fullName: f.fullName.value.trim(),
+                groupId: f.groupId.value,
+                email: f.email.value.trim(),
+                phone: f.phone.value.trim(),
+                birthDate: f.birthDate.value || null
+            });
+            flash("Студент добавлен", "success");
+            renderStudents();
+        } catch (err) {
+            flash("Ошибка: " + err.message, "danger");
+        }
+    };
+}
 
         document.querySelectorAll("[data-del-student]").forEach(btn => {
             btn.onclick = async () => {
