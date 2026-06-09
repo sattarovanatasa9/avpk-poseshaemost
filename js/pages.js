@@ -491,6 +491,7 @@ export async function renderStudents() {
 
         // === Обработчик импорта из Excel ===
         const formImport = document.getElementById("form-import");
+        console.log("Импорт подключен");
         if (formImport) {
             // Показ/скрытие поля пароля админа
             const checkboxAccounts = document.getElementById("import-create-accounts");
@@ -500,9 +501,11 @@ export async function renderStudents() {
             };
 
             formImport.onsubmit = async (e) => {
+                console.log("Кнопка нажата");
                 e.preventDefault();
                 const fileInput = document.getElementById("import-file");
                 const file = fileInput.files[0];
+                console.log(file);
                 const createAccounts = checkboxAccounts.checked;
                 const adminPassword = document.getElementById("admin-password").value;
 
