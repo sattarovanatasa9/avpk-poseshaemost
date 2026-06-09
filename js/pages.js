@@ -457,7 +457,7 @@ export async function renderStudents() {
         location.hash = v ? `students?group=${v}` : "students";
     };
 
-    if (canEdit && groups.length > 0) {
+    if (canEdit) {
         document.getElementById("form-add-student").onsubmit = async (e) => {
             e.preventDefault();
             const f = e.target;
