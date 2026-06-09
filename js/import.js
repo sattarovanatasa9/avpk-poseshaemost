@@ -9,19 +9,7 @@
 // =====================================================
 
 import * as db from "./db.js";
-import { auth } from "./firebase-config.js";
-import {
-    createUserWithEmailAndPassword,
-    signOut,
-    signInWithEmailAndPassword
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import {
-    doc, setDoc, getDocs, collection, query, where
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { db as firestoreDb } from "./firebase-config.js";
 
-// Пароль по умолчанию для всех импортированных студентов
-export const DEFAULT_STUDENT_PASSWORD = "Avpk2026!";
 
 // =====================================================
 // Парсинг
@@ -143,168 +131,179 @@ function extractStudents(rows) {
 //   onProgress  — callback(message, type)
 // =====================================================
 export async function importFromExcel(file, options, onProgress) {
-    const log = (msg, type = "info") => onProgress && onProgress(msg, type);
-    const createAccounts = options?.createAccounts !== false;
+
+    const log = (msg, type = "info") =>
+        onProgress && onProgress(msg, type);
 
     log("📂 Чтение файла...");
     const rows = await readExcelFile(file);
+
     log(`Прочитано строк: ${rows.length}`);
 
     log("🔍 Анализ данных...");
     const { students, groups } = extractStudents(rows);
+
     log(`Найдено студентов: ${students.length}, групп: ${groups.length}`);
 
     if (students.length === 0) {
         throw new Error("В файле не найдено ни одного студента.");
     }
 
-    // === Шаг 1: Создание групп ===
-    log("📋 Создание групп в базе данных...");
+    // ===== СОЗДАНИЕ ГРУПП =====
+
+    log("📋 Создание групп...");
+
     const existingGroups = await db.getAll("groups");
-    const existingByName = new Map(existingGroups.map(g => [g.name, g]));
-    const createdGroups = new Map(existingByName);
+
+    const existingByName = new Map(
+        existingGroups.map(g => [g.name, g])
+    );
+
+    const createdGroups = new Map();
+
+    existingGroups.forEach(g => {
+        createdGroups.set(g.name, g);
+    });
 
     let groupsCreated = 0;
+
     for (const grp of groups) {
-        if (existingByName.has(grp.name)) continue;
-        const id = await db.create("groups", grp);
-        createdGroups.set(grp.name, { id, ...grp });
+
+        if (existingByName.has(grp.name))
+            continue;
+
+        const id = await db.create(
+            "groups",
+            grp
+        );
+
+        createdGroups.set(grp.name, {
+            id,
+            ...grp
+        });
+
         groupsCreated++;
+
         if (groupsCreated % 10 === 0) {
-            log(`  Создано групп: ${groupsCreated}`);
+            log(`Создано групп: ${groupsCreated}`);
         }
     }
-    log(`✅ Групп создано: ${groupsCreated}, уже было: ${groups.length - groupsCreated}`);
 
-    // === Шаг 2: Получаем уже существующих студентов и пользователей ===
-    log("🔍 Проверка дублей...");
-    const existingStudents = await db.getAll("students");
+    log(`✅ Создано групп: ${groupsCreated}`);
+
+    // ===== ПРОВЕРКА ДУБЛЕЙ =====
+
+    log("🔍 Проверка существующих студентов...");
+
+    const existingStudents =
+        await db.getAll("students");
+
     const existingStudentKey = new Set(
-        existingStudents.map(s => `${s.fullName}__${s.groupId}`)
+        existingStudents.map(
+            s => `${s.fullName}__${s.groupId}`
+        )
     );
 
-    // Email уже зарегистрированных пользователей
-    const existingUsers = await db.getAll("users");
-    const existingEmails = new Set(
-        existingUsers.map(u => normalizeEmail(u.email)).filter(Boolean)
-    );
-
-    // === Шаг 3: Импорт студентов ===
-    log("👥 Импорт студентов и создание учётных записей...");
-    if (createAccounts) {
-        log("ℹ️ Внимание: Firebase разрешает ~50 регистраций в час. Если получите", "info");
-        log("   ошибку лимита — это нормально, запустите импорт ещё раз позже,", "info");
-        log("   программа допишет недостающих.", "info");
-        log(`🔑 Пароль для всех студентов: ${DEFAULT_STUDENT_PASSWORD}`, "info");
-    }
+    // ===== ДОБАВЛЕНИЕ СТУДЕНТОВ =====
 
     let studentsCreated = 0;
     let studentsSkipped = 0;
-    let accountsCreated = 0;
-    let accountsFailed = 0;
-    let rateLimitHit = false;
 
-    for (let idx = 0; idx < students.length; idx++) {
-        if (rateLimitHit && createAccounts) break;
+    log("👥 Импорт студентов...");
 
-        const stud = students[idx];
-        const grp = createdGroups.get(stud.groupName);
-        if (!grp) { studentsSkipped++; continue; }
+    for (let i = 0; i < students.length; i++) {
 
-        const studentKey = `${stud.fullName}__${grp.id}`;
+        const stud = students[i];
 
-        // Создаём запись студента в Firestore (если ещё нет)
-        if (!existingStudentKey.has(studentKey)) {
-            try {
-                await db.create("students", {
-                    fullName: stud.fullName,
-                    groupId: grp.id,
-                    email: stud.email,
-                    phone: stud.phone,
-                    birthDate: stud.birthDate
-                });
-                existingStudentKey.add(studentKey);
-                studentsCreated++;
-            } catch (err) {
-                console.error("Ошибка студента:", stud.fullName, err);
-                studentsSkipped++;
-                continue;
-            }
+        const grp = createdGroups.get(
+            stud.groupName
+        );
+
+        if (!grp) {
+            studentsSkipped++;
+            continue;
         }
 
-        // Создаём учётную запись Firebase Auth (если email есть и не зарегистрирован)
-        if (createAccounts && stud.email && !existingEmails.has(stud.email)) {
-            try {
-                const cred = await createUserWithEmailAndPassword(
-                    auth, stud.email, DEFAULT_STUDENT_PASSWORD
-                );
-                // Создаём документ пользователя в Firestore
-                await setDoc(doc(firestoreDb, "users", cred.user.uid), {
-                    uid: cred.user.uid,
-                    email: stud.email,
-                    fullName: stud.fullName,
-                    role: "student",
-                    mustChangePassword: true,
-                    createdAt: new Date().toISOString()
-                });
-                existingEmails.add(stud.email);
-                accountsCreated++;
-            } catch (err) {
-                if (err.code === "auth/email-already-in-use") {
-                    existingEmails.add(stud.email);
-                } else if (
-                    err.code === "auth/too-many-requests" ||
-                    err.code === "auth/quota-exceeded"
-                ) {
-                    log(`⚠️ Достигнут дневной лимит Firebase. Создано учёток: ${accountsCreated}.`, "warning");
-                    log(`   Запустите импорт снова через час или завтра — программа допишет недостающих.`, "warning");
-                    rateLimitHit = true;
-                    break;
-                } else {
-                    console.error("Ошибка учётки:", stud.email, err);
-                    accountsFailed++;
-                }
-            }
+        const key =
+            `${stud.fullName}__${grp.id}`;
+
+        if (existingStudentKey.has(key)) {
+            studentsSkipped++;
+            continue;
         }
 
-        if ((idx + 1) % 25 === 0) {
-            log(`  Обработано: ${idx + 1} из ${students.length} | студентов: +${studentsCreated} | учёток: +${accountsCreated}`);
+        try {
+
+            await db.create("students", {
+
+                fullName: stud.fullName,
+
+                groupId: grp.id,
+
+                email: stud.email,
+
+                phone: stud.phone,
+
+                birthDate: stud.birthDate
+
+            });
+
+            existingStudentKey.add(key);
+
+            studentsCreated++;
+
         }
+        catch (err) {
+
+            console.error(
+                "Ошибка:",
+                stud.fullName,
+                err
+            );
+
+            studentsSkipped++;
+        }
+
+        if ((i + 1) % 50 === 0) {
+
+            log(
+                `Обработано ${i + 1} из ${students.length}`
+            );
+
+        }
+
     }
 
     log("");
-    log(`✅ ИТОГО:`, "success");
-    log(`   Группы: создано ${groupsCreated}`, "success");
-    log(`   Студенты в БД: добавлено ${studentsCreated}, пропущено ${studentsSkipped}`, "success");
-    if (createAccounts) {
-        log(`   Учётные записи: создано ${accountsCreated}, ошибок ${accountsFailed}`, "success");
-        log(`   Пароль для всех студентов: ${DEFAULT_STUDENT_PASSWORD}`, "success");
-        log(`   Студенты входят по своему email и этому паролю.`, "success");
-    }
 
-    // ВАЖНО: createUserWithEmailAndPassword автоматически логинит созданного пользователя!
-    // Нужно вернуть админа обратно в систему.
-    if (createAccounts && accountsCreated > 0 && options?.adminEmail && options?.adminPassword) {
-        log("🔄 Возврат в учётную запись администратора...");
-        try {
-            await signInWithEmailAndPassword(auth, options.adminEmail, options.adminPassword);
-            log("✅ Готово!", "success");
-        } catch (err) {
-            log("⚠️ Не удалось вернуться в учётку админа. Просто войдите вручную.", "warning");
-            await signOut(auth);
-        }
-    }
+    log("✅ Импорт завершён", "success");
+
+    log(
+        `Групп создано: ${groupsCreated}`,
+        "success"
+    );
+
+    log(
+        `Студентов добавлено: ${studentsCreated}`,
+        "success"
+    );
+
+    log(
+        `Пропущено: ${studentsSkipped}`,
+        "success"
+    );
 
     return {
-        groupsCreated,
-        studentsCreated,
-        studentsSkipped,
-        accountsCreated,
-        accountsFailed,
-        rateLimitHit
-    };
-}
 
+        groupsCreated,
+
+        studentsCreated,
+
+        studentsSkipped
+
+    };
+
+}
 // =====================================================
 // Вспомогательное
 // =====================================================
