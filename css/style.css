@@ -819,3 +819,373 @@ body {
     background: #dc2626;
     color: white;
 }
+
+/* =============================================
+   СЕТКА ГРУПП НА СТРАНИЦЕ СТУДЕНТОВ
+   ============================================= */
+.specialty-section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--bg);
+    border-radius: var(--radius);
+}
+
+.specialty-section:last-child {
+    margin-bottom: 0;
+}
+
+.specialty-title {
+    font-size: 15px;
+    color: var(--primary-dark);
+    font-weight: 600;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary);
+}
+
+.course-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+.course-row:last-child { margin-bottom: 0; }
+
+.course-label {
+    flex-shrink: 0;
+    width: 70px;
+    padding: 8px 10px;
+    background: var(--primary);
+    color: white;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.group-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    flex: 1;
+}
+
+.group-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 8px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.15s;
+    cursor: pointer;
+    text-align: center;
+}
+
+.group-card:hover {
+    border-color: var(--primary);
+    background: #e0f2f1;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.group-card-name {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.group-card-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Адаптация под мобилки */
+@media (max-width: 600px) {
+    .course-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .course-label {
+        width: auto;
+        align-self: flex-start;
+    }
+    .group-cards {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        width: 100%;
+    }
+    .group-card {
+        padding: 10px 6px;
+    }
+    .group-card-name {
+        font-size: 13px;
+    }
+}
+
+/* =============================================
+   ЖУРНАЛ ОЦЕНОК (в стиле Platonus)
+   ============================================= */
+
+/* Панель выбора группы и предмета */
+.journal-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.journal-controls .form-group {
+    margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+    .journal-controls {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Навигация по месяцам */
+.journal-month-nav {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.journal-month-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 180px;
+    text-align: center;
+}
+
+/* Легенда оценок */
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Карточка с таблицей */
+.journal-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.journal-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: 70vh;
+}
+
+/* Сама таблица */
+.journal-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-size: 13px;
+    background: white;
+}
+
+.journal-table th,
+.journal-table td {
+    border: 1px solid var(--border);
+    padding: 8px 6px;
+    text-align: center;
+    background: white;
+}
+
+/* Шапка */
+.journal-table thead th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: var(--text);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.journal-th-num {
+    width: 40px;
+    min-width: 40px;
+    position: sticky !important;
+    left: 0;
+    z-index: 10;
+    background: #e0f2f1 !important;
+}
+
+.journal-th-name {
+    min-width: 220px;
+    width: 220px;
+    text-align: left !important;
+    padding-left: 12px !important;
+    position: sticky !important;
+    left: 40px;
+    z-index: 10;
+    background: #e0f2f1 !important;
+}
+
+.journal-th-date {
+    width: 60px;
+    min-width: 60px;
+    padding: 4px !important;
+    line-height: 1.1;
+}
+
+.journal-date-day {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.journal-date-num {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 2px;
+}
+
+.journal-th-avg {
+    background: #fef3c7 !important;
+    width: 120px;
+    min-width: 120px;
+    color: #92400e !important;
+}
+
+/* Ячейки тела */
+.journal-td-num {
+    width: 40px;
+    min-width: 40px;
+    color: var(--text-muted);
+    font-size: 12px;
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+.journal-td-name {
+    text-align: left !important;
+    padding-left: 12px !important;
+    position: sticky;
+    left: 40px;
+    z-index: 5;
+    background: #f1f5f9;
+    color: var(--text);
+}
+
+/* Ячейки с оценками */
+.journal-td-grade {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 14px;
+    transition: background 0.1s, transform 0.05s;
+    min-height: 36px;
+}
+
+.journal-td-grade:hover {
+    background: #fef3c7 !important;
+    transform: scale(1.05);
+}
+
+.journal-td-grade.grade-A {
+    background: #d1fae5;
+    color: #065f46;
+}
+.journal-td-grade.grade-B {
+    background: #ecfccb;
+    color: #365314;
+}
+.journal-td-grade.grade-C {
+    background: #fef3c7;
+    color: #78350f;
+}
+.journal-td-grade.grade-D {
+    background: #cffafe;
+    color: #155e75;
+}
+.journal-td-grade.grade-F {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Колонка среднего балла */
+.journal-td-avg {
+    background: #fffbeb;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Чередование строк */
+.journal-table tbody tr:nth-child(even) td:not(.journal-td-grade):not(.journal-td-avg) {
+    background: #f8fafc;
+}
+
+.journal-table tbody tr:nth-child(even) .journal-td-num,
+.journal-table tbody tr:nth-child(even) .journal-td-name {
+    background: #e2e8f0;
+}
+
+/* Hover на строке */
+.journal-table tbody tr:hover .journal-td-num,
+.journal-table tbody tr:hover .journal-td-name {
+    background: #ccfbf1;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 768px) {
+    .journal-th-name,
+    .journal-td-name {
+        min-width: 150px;
+        width: 150px;
+        font-size: 12px;
+    }
+    .journal-th-num,
+    .journal-td-num {
+        width: 32px;
+        min-width: 32px;
+    }
+    .journal-th-name {
+        left: 32px;
+    }
+    .journal-td-name {
+        left: 32px;
+    }
+    .journal-th-date {
+        width: 50px;
+        min-width: 50px;
+    }
+    .journal-date-num {
+        font-size: 15px;
+    }
+    .journal-month-title {
+        font-size: 15px;
+        min-width: 130px;
+    }
+    .legend {
+        font-size: 11px;
+        gap: 8px;
+    }
+}

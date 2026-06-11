@@ -316,6 +316,8 @@ export async function renderStudents() {
     const params = new URLSearchParams(location.hash.split("?")[1] || "");
     const filterGroupId = params.get("group");
 
+    // Если выбрана конкретная группа — режим просмотра группы
+    const selectedGroup = filterGroupId ? groupsById[filterGroupId] : null;
     let displayed = students;
     if (filterGroupId) displayed = students.filter(s => s.groupId === filterGroupId);
     displayed.sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -323,158 +325,171 @@ export async function renderStudents() {
     let html = `
         <div class="page-header">
             <h1>Студенты</h1>
-            <p class="muted">Показано записей: ${displayed.length} из ${students.length}</p>
-        </div>
-
-        <div class="card">
-            <form id="form-filter" class="filter-form">
-                <label>Фильтр по группе:</label>
-                <select id="filter-group">
-                    <option value="">Все группы</option>
-                    ${db.sortGroups(groups).map(g => `<option value="${g.id}" ${g.id === filterGroupId ? "selected" : ""}>${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                </select>
-                ${filterGroupId ? '<a href="#students" class="btn btn-sm btn-outline">Сбросить</a>' : ''}
-            </form>
+            <p class="muted">
+                ${selectedGroup
+                    ? `Группа <strong>${esc(selectedGroup.name)}</strong> · ${esc(selectedGroup.specialty)} · ${selectedGroup.course} курс · ${displayed.length} студентов`
+                    : `Всего: ${students.length} студентов в ${groups.length} группах`
+                }
+            </p>
         </div>
     `;
 
-    if (canEdit) {
-        html += `
-            <div class="card import-card">
-                <h2>📥 Массовый импорт из Excel</h2>
-                <p class="muted" style="margin-bottom:12px">
-                    Загрузите файл выгрузки из системы «Контингент» (формат .xls / .xlsx) —
-                    программа автоматически создаст все группы и студентов.
-                    Дубли пропускаются.
-                </p>
+    // === РЕЖИМ 1: Сетка групп (если группа не выбрана) ===
+    if (!selectedGroup) {
+        if (canEdit) {
+            html += renderImportBlock();
+        }
 
-                <form id="form-import" class="import-form-extended">
-                    <div class="form-group">
-                        <label>Файл с данными студентов</label>
-                        <input type="file" id="import-file" accept=".xls,.xlsx" required>
-                    </div>
+        // Группируем по специальности
+        const bySpecialty = {};
+        db.sortGroups(groups).forEach(g => {
+            const spec = g.specialty || "Без специальности";
+            if (!bySpecialty[spec]) bySpecialty[spec] = [];
+            bySpecialty[spec].push(g);
+        });
 
-                    <div class="form-group import-checkbox">
-                        <label>
-                            <input type="checkbox" id="import-create-accounts" checked>
-                            <span><strong>Создавать учётные записи студентов</strong> в Firebase Auth</span>
-                        </label>
-                        <p class="muted" style="margin:6px 0 0 26px;font-size:12px">
-                            Логин = email из Excel, пароль для всех = <code>Avpk2026!</code>.
-                            Firebase ограничивает ~50 регистраций/час — запускайте импорт
-                            повторно, программа пропустит уже созданных.
-                        </p>
-                    </div>
+        if (groups.length === 0) {
+            html += `
+                <div class="card">
+                    <p class="muted text-center" style="padding:30px">
+                        Группы ещё не созданы. ${canEdit ? "Загрузите файл Excel выше или добавьте группы вручную в разделе «Группы»." : ""}
+                    </p>
+                </div>
+            `;
+        } else {
+            html += `<div class="card"><h2>Выберите группу для работы</h2>`;
+            html += `<p class="muted" style="margin-bottom:14px">Нажмите на группу, чтобы увидеть список её студентов и работать с ним.</p>`;
 
-                    <div class="form-group" id="admin-password-group">
-                        <label>Ваш пароль (нужен для возврата после создания учёток)</label>
-                        <input type="password" id="admin-password" placeholder="••••••••">
-                        <p class="muted" style="margin:4px 0 0;font-size:12px">
-                            Firebase автоматически переключается на каждого нового пользователя.
-                            После импорта программа войдёт обратно под админом.
-                        </p>
-                    </div>
+            for (const [specName, specGroups] of Object.entries(bySpecialty)) {
+                // Считаем студентов по курсам внутри специальности
+                const byCourse = {};
+                specGroups.forEach(g => {
+                    if (!byCourse[g.course]) byCourse[g.course] = [];
+                    byCourse[g.course].push(g);
+                });
 
-                    <button type="submit" class="btn btn-primary">Запустить импорт</button>
-                </form>
-                <div id="import-log" class="import-log" style="display:none"></div>
-            </div>
-        `;
+                html += `
+                    <div class="specialty-section">
+                        <h3 class="specialty-title">${esc(specName)}</h3>
+                `;
 
+                for (const courseNum of Object.keys(byCourse).sort()) {
+                    const courseGroups = byCourse[courseNum];
+                    html += `
+                        <div class="course-row">
+                            <div class="course-label">${courseNum} курс</div>
+                            <div class="group-cards">
+                                ${courseGroups.map(g => {
+                                    const count = students.filter(s => s.groupId === g.id).length;
+                                    return `
+                                        <a href="#students?group=${g.id}" class="group-card">
+                                            <div class="group-card-name">${esc(g.name)}</div>
+                                            <div class="group-card-count">${count} студ.</div>
+                                        </a>
+                                    `;
+                                }).join("")}
+                            </div>
+                        </div>
+                    `;
+                }
+                html += `</div>`;
+            }
+            html += `</div>`;
+        }
+    }
+    // === РЕЖИМ 2: Просмотр выбранной группы ===
+    else {
         html += `
             <div class="card">
-                <h2>Добавить нового студента</h2>
-                ${groups.length === 0
-                    ? '<p class="alert alert-warning">Сначала нужно создать хотя бы одну группу в разделе «Группы».</p>'
-                    : `
-                <form id="form-add-student" class="form-grid">
-                    <div class="form-group form-group-wide">
-                        <label>ФИО *</label>
-                        <input type="text" name="fullName" required placeholder="Иванов Иван Иванович">
-                    </div>
-                    <div class="form-group">
-                        <label>Группа *</label>
-                        <select name="groupId" required>
-                            <option value="">— выберите —</option>
-                            ${db.sortGroups(groups).map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Email (для оценок)</label>
-                        <input type="email" name="email" placeholder="student@avpk.kz">
-                    </div>
-                    <div class="form-group">
-                        <label>Телефон</label>
-                        <input type="tel" name="phone" placeholder="+77001234567">
-                    </div>
-                    <div class="form-group">
-                        <label>Дата рождения</label>
-                        <input type="date" name="birthDate">
-                    </div>
-                    <div class="form-group form-group-full">
-                        <button type="submit" class="btn btn-primary">+ Добавить студента</button>
-                    </div>
-                </form>
-                `}
+                <a href="#students" class="btn btn-outline btn-sm">← К списку групп</a>
             </div>
         `;
-    }
 
-    html += `<div class="card">`;
-    if (displayed.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Студентов не найдено.</p>`;
-    } else {
-        html += `
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>№</th><th>ФИО</th><th>Группа</th><th>Email</th><th>Телефон</th>
-                        ${canEdit ? "<th>Действия</th>" : ""}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${displayed.map((s, i) => `
+        if (canEdit) {
+            html += `
+                <div class="card">
+                    <h2>Добавить студента в группу ${esc(selectedGroup.name)}</h2>
+                    <form id="form-add-student" class="form-grid">
+                        <div class="form-group form-group-wide">
+                            <label>ФИО *</label>
+                            <input type="text" name="fullName" required placeholder="Иванов Иван Иванович">
+                        </div>
+                        <div class="form-group">
+                            <label>Email (для оценок)</label>
+                            <input type="email" name="email" placeholder="student@avpk.kz">
+                        </div>
+                        <div class="form-group">
+                            <label>Телефон</label>
+                            <input type="tel" name="phone" placeholder="+77001234567">
+                        </div>
+                        <div class="form-group">
+                            <label>Дата рождения</label>
+                            <input type="date" name="birthDate">
+                        </div>
+                        <input type="hidden" name="groupId" value="${selectedGroup.id}">
+                        <div class="form-group form-group-full">
+                            <button type="submit" class="btn btn-primary">+ Добавить студента в ${esc(selectedGroup.name)}</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+        }
+
+        html += `<div class="card">`;
+        html += `<h2>Список студентов группы ${esc(selectedGroup.name)}</h2>`;
+
+        if (displayed.length === 0) {
+            html += `<p class="muted text-center" style="padding:30px">В этой группе пока нет студентов.</p>`;
+        } else {
+            html += `
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>${i + 1}</td>
-                            <td><strong>${esc(s.fullName)}</strong></td>
-                            <td><span class="badge">${esc(groupsById[s.groupId]?.name || "—")}</span></td>
-                            <td>${esc(s.email || "—")}</td>
-                            <td>${esc(s.phone || "—")}</td>
-                            ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-student="${s.id}" data-name="${esc(s.fullName)}">Удалить</button></td>` : ""}
+                            <th>№</th><th>ФИО</th><th>Email</th><th>Телефон</th>
+                            ${canEdit ? "<th>Действия</th>" : ""}
                         </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-        `;
+                    </thead>
+                    <tbody>
+                        ${displayed.map((s, i) => `
+                            <tr>
+                                <td>${i + 1}</td>
+                                <td><strong>${esc(s.fullName)}</strong></td>
+                                <td>${esc(s.email || "—")}</td>
+                                <td>${esc(s.phone || "—")}</td>
+                                ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-student="${s.id}" data-name="${esc(s.fullName)}">Удалить</button></td>` : ""}
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            `;
+        }
+        html += `</div>`;
     }
-    html += `</div>`;
 
     content().innerHTML = html;
 
-    // Фильтр по группе
-    document.getElementById("filter-group").onchange = (e) => {
-        const v = e.target.value;
-        location.hash = v ? `students?group=${v}` : "students";
-    };
-
-    if (canEdit && groups.length > 0) {
-        document.getElementById("form-add-student").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            try {
-                await db.create("students", {
-                    fullName: f.fullName.value.trim(),
-                    groupId: f.groupId.value,
-                    email: f.email.value.trim(),
-                    phone: f.phone.value.trim(),
-                    birthDate: f.birthDate.value || null
-                });
-                flash("Студент добавлен", "success");
-                renderStudents();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
+    // === Обработчики ===
+    if (canEdit && selectedGroup) {
+        const formAddStudent = document.getElementById("form-add-student");
+        if (formAddStudent) {
+            formAddStudent.onsubmit = async (e) => {
+                e.preventDefault();
+                const f = e.target;
+                try {
+                    await db.create("students", {
+                        fullName: f.fullName.value.trim(),
+                        groupId: f.groupId.value,
+                        email: f.email.value.trim(),
+                        phone: f.phone.value.trim(),
+                        birthDate: f.birthDate.value || null
+                    });
+                    flash("Студент добавлен", "success");
+                    renderStudents();
+                } catch (err) {
+                    flash("Ошибка: " + err.message, "danger");
+                }
+            };
+        }
 
         document.querySelectorAll("[data-del-student]").forEach(btn => {
             btn.onclick = async () => {
@@ -490,88 +505,131 @@ export async function renderStudents() {
         });
     }
 
-    // === Обработчик импорта из Excel (работает всегда у админа, даже без групп) ===
-    if (canEdit) {
-        const formImport = document.getElementById("form-import");
-        if (formImport) {
-            const checkboxAccounts = document.getElementById("import-create-accounts");
-            const adminPwdGroup = document.getElementById("admin-password-group");
-            checkboxAccounts.onchange = () => {
-                adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
-            };
-            // Сразу применим состояние галочки
-            adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
-
-            formImport.onsubmit = async (e) => {
-                e.preventDefault();
-                const fileInput = document.getElementById("import-file");
-                const file = fileInput.files[0];
-                const createAccounts = checkboxAccounts.checked;
-                const adminPassword = document.getElementById("admin-password").value;
-
-                if (!file) {
-                    flash("Выберите файл", "warning");
-                    return;
-                }
-                if (createAccounts && !adminPassword) {
-                    flash("Введите ваш пароль администратора", "warning");
-                    return;
-                }
-
-                const logEl = document.getElementById("import-log");
-                logEl.style.display = "block";
-                logEl.innerHTML = "";
-
-                const appendLog = (msg, type = "info") => {
-                    const line = document.createElement("div");
-                    line.className = "import-log-line import-log-" + type;
-                    line.textContent = msg;
-                    logEl.appendChild(line);
-                    logEl.scrollTop = logEl.scrollHeight;
-                };
-
-                const submitBtn = formImport.querySelector("button[type=submit]");
-                submitBtn.disabled = true;
-                submitBtn.textContent = "Импорт идёт...";
-
-                try {
-                    const confirmMsg = createAccounts
-                        ? `Будут импортированы студенты из файла "${file.name}" с созданием учётных записей.\nЭто может занять до часа. Продолжить?`
-                        : `Будут импортированы студенты из файла "${file.name}".\nПродолжить?`;
-
-                    if (!confirm(confirmMsg)) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = "Запустить импорт";
-                        return;
-                    }
-
-                    const result = await importFromExcel(file, {
-                        createAccounts: createAccounts,
-                        adminEmail: currentUser.email,
-                        adminPassword: adminPassword
-                    }, appendLog);
-
-                    let summary = `Создано: ${result.groupsCreated} групп, ${result.studentsCreated} студентов`;
-                    if (createAccounts) {
-                        summary += `, ${result.accountsCreated} учёток`;
-                    }
-                    flash(summary, "success");
-
-                    if (!result.rateLimitHit) {
-                        setTimeout(() => renderStudents(), 3000);
-                    }
-                } catch (err) {
-                    console.error(err);
-                    appendLog("❌ Ошибка: " + err.message, "danger");
-                    flash("Ошибка импорта: " + err.message, "danger");
-                } finally {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = "Запустить импорт";
-                }
-            };
-        }
+    // Обработчик импорта (только когда показан блок импорта — на странице "все группы")
+    if (canEdit && !selectedGroup) {
+        attachImportHandler();
     }
 }
+
+// Блок импорта (выделен в отдельную функцию)
+function renderImportBlock() {
+    return `
+        <div class="card import-card">
+            <h2>📥 Массовый импорт из Excel</h2>
+            <p class="muted" style="margin-bottom:12px">
+                Загрузите файл выгрузки из системы «Контингент» (формат .xls / .xlsx) —
+                программа автоматически создаст все группы и студентов. Дубли пропускаются.
+            </p>
+
+            <form id="form-import" class="import-form-extended">
+                <div class="form-group">
+                    <label>Файл с данными студентов</label>
+                    <input type="file" id="import-file" accept=".xls,.xlsx" required>
+                </div>
+
+                <div class="form-group import-checkbox">
+                    <label>
+                        <input type="checkbox" id="import-create-accounts">
+                        <span><strong>Создавать учётные записи студентов</strong> в Firebase Auth</span>
+                    </label>
+                    <p class="muted" style="margin:6px 0 0 26px;font-size:12px">
+                        Логин = email из Excel, пароль для всех = <code>Avpk2026!</code>.
+                        Без галочки — будут созданы только записи в БД (рекомендуется для большого количества).
+                    </p>
+                </div>
+
+                <div class="form-group" id="admin-password-group" style="display:none">
+                    <label>Ваш пароль (нужен для возврата после создания учёток)</label>
+                    <input type="password" id="admin-password" placeholder="••••••••">
+                </div>
+
+                <button type="submit" class="btn btn-primary">Запустить импорт</button>
+            </form>
+            <div id="import-log" class="import-log" style="display:none"></div>
+        </div>
+    `;
+}
+
+// Привязка обработчика импорта
+function attachImportHandler() {
+    const formImport = document.getElementById("form-import");
+    if (!formImport) return;
+
+    const checkboxAccounts = document.getElementById("import-create-accounts");
+    const adminPwdGroup = document.getElementById("admin-password-group");
+    checkboxAccounts.onchange = () => {
+        adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
+    };
+
+    formImport.onsubmit = async (e) => {
+        e.preventDefault();
+        const fileInput = document.getElementById("import-file");
+        const file = fileInput.files[0];
+        const createAccounts = checkboxAccounts.checked;
+        const adminPassword = document.getElementById("admin-password").value;
+
+        if (!file) {
+            flash("Выберите файл", "warning");
+            return;
+        }
+        if (createAccounts && !adminPassword) {
+            flash("Введите ваш пароль администратора", "warning");
+            return;
+        }
+
+        const logEl = document.getElementById("import-log");
+        logEl.style.display = "block";
+        logEl.innerHTML = "";
+
+        const appendLog = (msg, type = "info") => {
+            const line = document.createElement("div");
+            line.className = "import-log-line import-log-" + type;
+            line.textContent = msg;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        };
+
+        const submitBtn = formImport.querySelector("button[type=submit]");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Импорт идёт...";
+
+        try {
+            const confirmMsg = createAccounts
+                ? `Будут импортированы студенты из файла "${file.name}" с созданием учётных записей.\nЭто может занять до часа. Продолжить?`
+                : `Будут импортированы студенты из файла "${file.name}".\nПродолжить?`;
+
+            if (!confirm(confirmMsg)) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Запустить импорт";
+                return;
+            }
+
+            const result = await importFromExcel(file, {
+                createAccounts: createAccounts,
+                adminEmail: currentUser.email,
+                adminPassword: adminPassword
+            }, appendLog);
+
+            let summary = `Создано: ${result.groupsCreated} групп, ${result.studentsCreated} студентов`;
+            if (createAccounts) {
+                summary += `, ${result.accountsCreated} учёток`;
+            }
+            flash(summary, "success");
+
+            if (!result.rateLimitHit) {
+                setTimeout(() => renderStudents(), 3000);
+            }
+        } catch (err) {
+            console.error(err);
+            appendLog("❌ Ошибка: " + err.message, "danger");
+            flash("Ошибка импорта: " + err.message, "danger");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Запустить импорт";
+        }
+    };
+}
+
 
 // =====================================================
 // СТРАНИЦА: Предметы
@@ -680,6 +738,14 @@ export async function renderSubjects() {
 // =====================================================
 // СТРАНИЦА: Оценки
 // =====================================================
+
+// =====================================================
+// СТРАНИЦА: Журнал оценок (в стиле Platonus)
+// =====================================================
+// Преподаватель/админ выбирает группу + предмет + месяц,
+// открывается таблица: студенты по вертикали, даты по горизонтали.
+// Клик на ячейку → ввод оценки, клик на «+» в шапке → добавить дату.
+// =====================================================
 export async function renderGrades() {
     const role = currentUser.role;
     const canEdit = role === "admin" || role === "teacher";
@@ -698,174 +764,459 @@ export async function renderGrades() {
     const subjectsById = Object.fromEntries(subjects.map(s => [s.id, s]));
     const usersByUid = Object.fromEntries(users.map(u => [u.uid, u]));
 
-    // === Для преподавателя — отфильтровать данные по его назначениям ===
-    let myAssignments = [];
-    let mySubjectIds = new Set();
-    let myGroupIds = new Set();
-    let myStudents = students;
-    let mySubjects = subjects;
-
-    if (role === "teacher") {
-        myAssignments = assignments.filter(a => a.teacherId === currentUser.uid);
-        mySubjectIds = new Set(myAssignments.map(a => a.subjectId));
-        myGroupIds = new Set(myAssignments.map(a => a.groupId));
-        myStudents = students.filter(s => myGroupIds.has(s.groupId));
-        mySubjects = subjects.filter(s => mySubjectIds.has(s.id));
-    }
-
-    // Фильтрация показываемых оценок
-    let displayed = grades;
+    // === Студент: показываем только его оценки таблицей ===
     if (role === "student") {
-        displayed = grades.filter(g => g.studentEmail === currentUser.email);
-    } else if (role === "teacher") {
-        displayed = grades.filter(g => g.teacherId === currentUser.uid);
+        return renderStudentGrades(grades, subjectsById, usersByUid);
     }
-    displayed.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
+    // === Параметры из URL ===
+    const params = new URLSearchParams(location.hash.split("?")[1] || "");
+    const groupId = params.get("group");
+    const subjectId = params.get("subject");
+    const yearParam = parseInt(params.get("year")) || new Date().getFullYear();
+    const monthParam = parseInt(params.get("month")) ?? new Date().getMonth(); // 0-11
+
+    // === Определение доступных групп и предметов для роли ===
+    let availableGroups, availableSubjects;
+    if (role === "teacher") {
+        const myAssignments = assignments.filter(a => a.teacherId === currentUser.uid);
+        const myGroupIds = new Set(myAssignments.map(a => a.groupId));
+        const mySubjectIds = new Set(myAssignments.map(a => a.subjectId));
+        availableGroups = db.sortGroups(groups.filter(g => myGroupIds.has(g.id)));
+        availableSubjects = subjects.filter(s => mySubjectIds.has(s.id))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (myAssignments.length === 0) {
+            content().innerHTML = `
+                <div class="page-header"><h1>Журнал оценок</h1></div>
+                <div class="card">
+                    <div class="alert alert-warning">
+                        <strong>Вам ещё не назначены предметы и группы.</strong><br>
+                        Обратитесь к администратору, чтобы он назначил вам предметы и группы.
+                    </div>
+                </div>
+            `;
+            return;
+        }
+    } else {
+        availableGroups = db.sortGroups(groups);
+        availableSubjects = [...subjects].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    const selectedGroup = groupId ? groupsById[groupId] : null;
+    const selectedSubject = subjectId ? subjectsById[subjectId] : null;
+
+    // === Заголовок и панель выбора ===
     let html = `
         <div class="page-header">
-            <h1>Оценки</h1>
+            <h1>📔 Журнал оценок</h1>
             <p class="muted">${
-                role === "student" ? "Мои оценки" :
-                role === "teacher" ? `Мои оценки · ${displayed.length} записей · ${myAssignments.length} назначений` :
-                `Всего записей: ${displayed.length}`
+                selectedGroup && selectedSubject
+                    ? `${esc(selectedGroup.name)} · ${esc(selectedSubject.name)}`
+                    : "Выберите группу и предмет"
             }</p>
         </div>
 
         <div class="card">
-            <h2 style="margin-bottom:10px">Шкала оценок (100-балльная система)</h2>
-            <div class="scale-grid">
-                <div class="scale-item"><span class="grade-badge grade-A">A</span> 90–100 — Отлично</div>
-                <div class="scale-item"><span class="grade-badge grade-B">B</span> 75–89 — Хорошо</div>
-                <div class="scale-item"><span class="grade-badge grade-C">C</span> 60–74 — Удовлетворительно</div>
-                <div class="scale-item"><span class="grade-badge grade-D">D</span> 50–59 — Зачёт</div>
-                <div class="scale-item"><span class="grade-badge grade-F">F</span> 0–49 — Неудовлетворительно</div>
+            <div class="journal-controls">
+                <div class="form-group">
+                    <label>Группа</label>
+                    <select id="journal-group">
+                        <option value="">— выберите группу —</option>
+                        ${availableGroups.map(g => `
+                            <option value="${g.id}" ${g.id === groupId ? "selected" : ""}>
+                                ${esc(g.name)} — ${esc(g.specialty)}
+                            </option>
+                        `).join("")}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Предмет</label>
+                    <select id="journal-subject">
+                        <option value="">— выберите предмет —</option>
+                        ${availableSubjects.map(s => `
+                            <option value="${s.id}" ${s.id === subjectId ? "selected" : ""}>
+                                ${esc(s.name)}
+                            </option>
+                        `).join("")}
+                    </select>
+                </div>
             </div>
         </div>
     `;
 
+    if (!selectedGroup || !selectedSubject) {
+        html += `
+            <div class="card">
+                <p class="muted text-center" style="padding:30px">
+                    👆 Выберите группу и предмет, чтобы открыть журнал оценок.
+                </p>
+            </div>
+        `;
+        content().innerHTML = html;
+        setupJournalSelectors(yearParam, monthParam);
+        return;
+    }
+
+    // === Студенты выбранной группы ===
+    const groupStudents = students
+        .filter(s => s.groupId === selectedGroup.id)
+        .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+    // === Оценки этой группы по этому предмету ===
+    const studentIds = new Set(groupStudents.map(s => s.id));
+    const journalGrades = grades.filter(g =>
+        studentIds.has(g.studentId) && g.subjectId === selectedSubject.id
+    );
+
+    // === Уникальные даты в этом месяце ===
+    const monthStart = new Date(yearParam, monthParam, 1);
+    const monthEnd = new Date(yearParam, monthParam + 1, 0);
+    const datesSet = new Set();
+    journalGrades.forEach(g => {
+        if (!g.date) return;
+        const d = new Date(g.date);
+        if (d >= monthStart && d <= monthEnd) {
+            datesSet.add(g.date);
+        }
+    });
+    const dates = Array.from(datesSet).sort();
+
+    // === Месяц-навигация ===
+    const monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь",
+                        "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+    const prevMonth = monthParam === 0 ? 11 : monthParam - 1;
+    const prevYear = monthParam === 0 ? yearParam - 1 : yearParam;
+    const nextMonth = monthParam === 11 ? 0 : monthParam + 1;
+    const nextYear = monthParam === 11 ? yearParam + 1 : yearParam;
+    const baseUrl = `#grades?group=${selectedGroup.id}&subject=${selectedSubject.id}`;
+
+    html += `
+        <div class="card">
+            <div class="journal-month-nav">
+                <a href="${baseUrl}&year=${prevYear}&month=${prevMonth}" class="btn btn-sm btn-outline">←</a>
+                <strong class="journal-month-title">${monthNames[monthParam]} ${yearParam}</strong>
+                <a href="${baseUrl}&year=${nextYear}&month=${nextMonth}" class="btn btn-sm btn-outline">→</a>
+                ${canEdit ? `<button id="btn-add-date" class="btn btn-sm btn-primary">+ Добавить дату</button>` : ""}
+            </div>
+
+            <div class="legend">
+                <span><span class="grade-badge grade-A">A</span> 90–100</span>
+                <span><span class="grade-badge grade-B">B</span> 75–89</span>
+                <span><span class="grade-badge grade-C">C</span> 60–74</span>
+                <span><span class="grade-badge grade-D">D</span> 50–59</span>
+                <span><span class="grade-badge grade-F">F</span> 0–49</span>
+            </div>
+        </div>
+    `;
+
+    // === Сам журнал ===
+    html += `<div class="card journal-card"><div class="journal-table-wrap"><table class="journal-table">`;
+    html += `<thead><tr>`;
+    html += `<th class="journal-th-num">№</th>`;
+    html += `<th class="journal-th-name">ФИО студента</th>`;
+    dates.forEach(date => {
+        const d = new Date(date);
+        const days = ["ВС","ПН","ВТ","СР","ЧТ","ПТ","СБ"];
+        html += `
+            <th class="journal-th-date">
+                <div class="journal-date-day">${days[d.getDay()]}</div>
+                <div class="journal-date-num">${d.getDate()}</div>
+            </th>
+        `;
+    });
+    html += `<th class="journal-th-avg">Средний</th>`;
+    html += `</tr></thead><tbody>`;
+
+    groupStudents.forEach((s, i) => {
+        const studGrades = journalGrades.filter(g => g.studentId === s.id);
+        const studScores = studGrades.map(g => g.score);
+        const studAvg = studScores.length ? db.avg(studScores) : null;
+
+        html += `<tr>`;
+        html += `<td class="journal-td-num">${i + 1}</td>`;
+        html += `<td class="journal-td-name"><strong>${esc(s.fullName)}</strong></td>`;
+
+        dates.forEach(date => {
+            const grade = studGrades.find(g => g.date === date);
+            const gradeClass = grade ? db.gradeClass(grade.score) : "";
+            html += `
+                <td class="journal-td-grade ${gradeClass}"
+                    data-student-id="${s.id}"
+                    data-date="${date}"
+                    ${grade ? `data-grade-id="${grade.id}" data-score="${grade.score}"` : ''}>
+                    ${grade ? grade.score : ""}
+                </td>
+            `;
+        });
+
+        html += `<td class="journal-td-avg">${
+            studAvg !== null
+                ? `<strong>${studAvg}</strong> <span class="grade-badge ${db.gradeClass(studAvg)}">${db.scoreToLetter(studAvg)}</span>`
+                : "—"
+        }</td>`;
+        html += `</tr>`;
+    });
+
+    if (groupStudents.length === 0) {
+        html += `<tr><td colspan="${dates.length + 3}" style="padding:30px;text-align:center" class="muted">В этой группе нет студентов</td></tr>`;
+    }
+
+    html += `</tbody></table></div></div>`;
+
+    content().innerHTML = html;
+
+    // === Обработчики ===
+    setupJournalSelectors(yearParam, monthParam);
+
     if (canEdit) {
-        // Преподавателю — проверим что ему вообще назначили предметы
-        if (role === "teacher" && myAssignments.length === 0) {
-            html += `
-                <div class="card">
-                    <div class="alert alert-warning">
-                        <strong>Вам ещё не назначены предметы и группы.</strong><br>
-                        Обратитесь к администратору, чтобы он назначил вам предметы и группы,
-                        в которых вы преподаёте.
-                    </div>
-                </div>
-            `;
-        } else if (students.length === 0 || subjects.length === 0) {
-            html += `
-                <div class="card">
-                    <div class="alert alert-warning">
-                        Чтобы выставлять оценки, нужно добавить минимум одного студента и один предмет.
-                        ${students.length === 0 ? '<br>→ <a href="#students">Добавить студентов</a>' : ""}
-                        ${subjects.length === 0 ? '<br>→ <a href="#subjects">Добавить предметы</a>' : ""}
-                    </div>
-                </div>
-            `;
-        } else {
-            // Подготовим список групп для фильтра в форме
-            // Для преподавателя — только его группы, для админа — все
-            const availableGroups = role === "teacher"
-                ? db.sortGroups(groups.filter(g => myGroupIds.has(g.id)))
-                : db.sortGroups(groups);
+        // Кнопка "Добавить дату"
+        const btnAddDate = document.getElementById("btn-add-date");
+        if (btnAddDate) {
+            btnAddDate.onclick = () => addDateColumn(selectedGroup, selectedSubject, yearParam, monthParam);
+        }
 
-            // Список предметов
-            const availableSubjects = role === "teacher"
-                ? [...mySubjects].sort((a,b) => a.name.localeCompare(b.name))
-                : [...subjects].sort((a,b) => a.name.localeCompare(b.name));
+        // Клик на ячейку оценки → редактирование
+        document.querySelectorAll(".journal-td-grade").forEach(td => {
+            td.onclick = () => editGradeCell(td, selectedGroup, selectedSubject, role === "teacher" ? assignments : null);
+        });
+    }
+}
 
-            html += `
-                <div class="card">
-                    <h2>📝 Выставить оценку</h2>
-                    <form id="form-add-grade" class="form-grid">
-                        <div class="form-group">
-                            <label>Группа *</label>
-                            <select name="groupId" id="grade-group" required>
-                                <option value="">— выберите группу —</option>
-                                ${availableGroups.map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Студент *</label>
-                            <select name="studentId" id="grade-student" required disabled>
-                                <option value="">— сначала выберите группу —</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Предмет *</label>
-                            <select name="subjectId" id="grade-subject" required ${role === "teacher" && availableSubjects.length === 0 ? "disabled" : ""}>
-                                <option value="">— выберите предмет —</option>
-                                ${availableSubjects.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Балл (10–100) *</label>
-                            <input type="number" name="score" required min="10" max="100" placeholder="85">
-                        </div>
-                        <div class="form-group">
-                            <label>Дата</label>
-                            <input type="date" name="date" value="${new Date().toISOString().slice(0,10)}">
-                        </div>
-                        <div class="form-group">
-                            <label>Тип</label>
-                            <select name="type">
-                                <option value="current">Текущая</option>
-                                <option value="midterm">Рубежный контроль</option>
-                                <option value="exam">Экзамен</option>
-                            </select>
-                        </div>
-                        <div class="form-group form-group-full">
-                            <label>Комментарий</label>
-                            <input type="text" name="comment" placeholder="Необязательно">
-                        </div>
-                        <div class="form-group form-group-full">
-                            <button type="submit" class="btn btn-primary">+ Выставить оценку</button>
-                        </div>
-                    </form>
-                </div>
-            `;
+// =====================================================
+// Редактирование ячейки оценки
+// =====================================================
+async function editGradeCell(td, group, subject, teacherAssignments) {
+    const studentId = td.dataset.studentId;
+    const date = td.dataset.date;
+    const gradeId = td.dataset.gradeId;
+    const currentScore = td.dataset.score || "";
+
+    // Для преподавателя — проверка назначения
+    if (teacherAssignments) {
+        const hasAssignment = teacherAssignments.some(a =>
+            a.teacherId === currentUser.uid &&
+            a.subjectId === subject.id &&
+            a.groupId === group.id
+        );
+        if (!hasAssignment) {
+            flash("Вы не назначены преподавать этот предмет в этой группе", "danger");
+            return;
         }
     }
 
-    html += `<div class="card"><h2>${role === "student" ? "История моих оценок" : "Список оценок"}</h2>`;
-    if (displayed.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Оценок пока нет.</p>`;
+    const inputStr = prompt(
+        `Введите балл (10–100):\n` +
+        `Пустое поле — удалить оценку`,
+        currentScore
+    );
+
+    if (inputStr === null) return; // Cancel
+
+    if (inputStr === "") {
+        // Удаление оценки
+        if (gradeId) {
+            if (!confirm("Удалить оценку?")) return;
+            try {
+                await db.remove("grades", gradeId);
+                flash("Оценка удалена", "success");
+                renderGrades();
+            } catch (err) {
+                flash("Ошибка: " + err.message, "danger");
+            }
+        }
+        return;
+    }
+
+    const score = parseInt(inputStr);
+    if (isNaN(score) || score < 10 || score > 100) {
+        flash("Балл должен быть от 10 до 100", "danger");
+        return;
+    }
+
+    try {
+        const student = await db.getById("students", studentId);
+        if (gradeId) {
+            // Обновление существующей
+            await db.update("grades", gradeId, { score, date });
+            flash("Оценка обновлена", "success");
+        } else {
+            // Создание новой
+            await db.create("grades", {
+                studentId: studentId,
+                studentEmail: student?.email || "",
+                subjectId: subject.id,
+                groupId: group.id,
+                teacherId: currentUser.uid,
+                score: score,
+                date: date,
+                type: "current",
+                comment: ""
+            });
+            flash("Оценка выставлена", "success");
+        }
+        renderGrades();
+    } catch (err) {
+        flash("Ошибка: " + err.message, "danger");
+    }
+}
+
+// =====================================================
+// Добавление даты-колонки в журнал
+// =====================================================
+async function addDateColumn(group, subject, year, month) {
+    const today = new Date();
+    const defaultDate = (year === today.getFullYear() && month === today.getMonth())
+        ? today.toISOString().slice(0, 10)
+        : new Date(year, month, 15).toISOString().slice(0, 10);
+
+    const dateStr = prompt("Введите дату занятия (ГГГГ-ММ-ДД):", defaultDate);
+    if (!dateStr) return;
+
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) {
+        flash("Некорректная дата", "danger");
+        return;
+    }
+
+    if (d.getMonth() !== month || d.getFullYear() !== year) {
+        flash("Дата должна быть в текущем месяце журнала", "warning");
+        return;
+    }
+
+    // Создаём «технический маркер» — оценку первому студенту группы с null-score
+    // Но лучше — просто переходим на этот месяц и потом ставим оценки
+    // Самый простой способ: создать оценку 0 первому студенту, чтобы дата появилась в колонках
+    // НО это плохо. Лучше: храним даты как метаданные.
+    //
+    // Альтернатива: даты появляются автоматически когда ставится первая оценка.
+    // Поэтому скажем пользователю — кликни на ячейку.
+    //
+    // Решение: добавим невидимую "пустую" оценку через специальный путь — нет.
+    // Лучшее решение: сделать prompt для первого студента сразу.
+
+    const dateLabel = d.toLocaleDateString("ru-RU");
+    const scoreStr = prompt(
+        `Дата ${dateLabel} добавлена.\n\n` +
+        `Введите балл для первого студента (10–100), чтобы дата появилась в журнале.\n` +
+        `Если просто хотите подготовить колонку — введите оценку первому студенту, потом редактируйте остальных.`,
+        ""
+    );
+
+    if (!scoreStr) {
+        flash("Дата не сохранена — нужно ввести хотя бы одну оценку", "info");
+        return;
+    }
+
+    const score = parseInt(scoreStr);
+    if (isNaN(score) || score < 10 || score > 100) {
+        flash("Балл должен быть от 10 до 100", "danger");
+        return;
+    }
+
+    // Найдём первого студента группы
+    const students = await db.getAll("students");
+    const firstStud = students
+        .filter(s => s.groupId === group.id)
+        .sort((a, b) => a.fullName.localeCompare(b.fullName))[0];
+
+    if (!firstStud) {
+        flash("В группе нет студентов", "warning");
+        return;
+    }
+
+    try {
+        await db.create("grades", {
+            studentId: firstStud.id,
+            studentEmail: firstStud.email || "",
+            subjectId: subject.id,
+            groupId: group.id,
+            teacherId: currentUser.uid,
+            score: score,
+            date: dateStr,
+            type: "current",
+            comment: ""
+        });
+        flash(`Дата ${dateLabel} добавлена в журнал`, "success");
+        renderGrades();
+    } catch (err) {
+        flash("Ошибка: " + err.message, "danger");
+    }
+}
+
+// =====================================================
+// Селекторы группы и предмета
+// =====================================================
+function setupJournalSelectors(year, month) {
+    const sg = document.getElementById("journal-group");
+    const ss = document.getElementById("journal-subject");
+
+    const update = () => {
+        const g = sg.value;
+        const s = ss.value;
+        if (g && s) {
+            location.hash = `grades?group=${g}&subject=${s}&year=${year}&month=${month}`;
+        } else if (g) {
+            location.hash = `grades?group=${g}&year=${year}&month=${month}`;
+        } else {
+            location.hash = "grades";
+        }
+    };
+
+    if (sg) sg.onchange = update;
+    if (ss) ss.onchange = update;
+}
+
+// =====================================================
+// СТРАНИЦА для студента: его оценки
+// =====================================================
+function renderStudentGrades(grades, subjectsById, usersByUid) {
+    const myGrades = grades
+        .filter(g => g.studentEmail === currentUser.email)
+        .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    let html = `
+        <div class="page-header">
+            <h1>Мои оценки</h1>
+            <p class="muted">${myGrades.length} записей</p>
+        </div>
+
+        <div class="card">
+            <div class="legend">
+                <span><span class="grade-badge grade-A">A</span> 90–100 — Отлично</span>
+                <span><span class="grade-badge grade-B">B</span> 75–89 — Хорошо</span>
+                <span><span class="grade-badge grade-C">C</span> 60–74 — Удовл.</span>
+                <span><span class="grade-badge grade-D">D</span> 50–59 — Зачёт</span>
+                <span><span class="grade-badge grade-F">F</span> 0–49 — Неуд.</span>
+            </div>
+        </div>
+
+        <div class="card">
+    `;
+
+    if (myGrades.length === 0) {
+        html += `<p class="muted text-center" style="padding:30px">У вас пока нет оценок.</p>`;
     } else {
         html += `
             <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Дата</th>
-                        ${role !== "student" ? "<th>Студент</th><th>Группа</th>" : ""}
-                        <th>Предмет</th><th>Тип</th><th>Балл</th><th>Оценка</th>
-                        <th>Преподаватель</th><th>Комментарий</th>
-                        ${canEdit ? "<th></th>" : ""}
-                    </tr>
-                </thead>
+                <thead><tr>
+                    <th>Дата</th><th>Предмет</th><th>Тип</th>
+                    <th>Балл</th><th>Оценка</th><th>Преподаватель</th><th>Комментарий</th>
+                </tr></thead>
                 <tbody>
-                    ${displayed.map(g => {
-                        const stud = studentsById[g.studentId];
+                    ${myGrades.map(g => {
                         const subj = subjectsById[g.subjectId];
                         const teacher = usersByUid[g.teacherId];
-                        const typeLabel = { current: "текущая", midterm: "рубежный", exam: "экзамен" }[g.type] || g.type;
+                        const typeLabel = {current:"текущая",midterm:"рубежный",exam:"экзамен"}[g.type] || g.type;
                         return `
                             <tr>
                                 <td>${esc(g.date)}</td>
-                                ${role !== "student" ? `
-                                    <td>${esc(stud?.fullName || "—")}</td>
-                                    <td><span class="badge">${esc(groupsById[stud?.groupId]?.name || "—")}</span></td>
-                                ` : ""}
                                 <td>${esc(subj?.name || "—")}</td>
                                 <td>${typeLabel}</td>
                                 <td><strong>${g.score}</strong></td>
                                 <td><span class="grade-badge ${db.gradeClass(g.score)}">${db.scoreToLetter(g.score)}</span></td>
                                 <td>${esc(teacher?.fullName || "—")}</td>
                                 <td>${esc(g.comment || "")}</td>
-                                ${canEdit ? `<td><button class="btn btn-sm btn-danger" data-del-grade="${g.id}">×</button></td>` : ""}
                             </tr>
                         `;
                     }).join("")}
@@ -876,85 +1227,6 @@ export async function renderGrades() {
     html += `</div>`;
 
     content().innerHTML = html;
-
-    if (canEdit && students.length > 0 && subjects.length > 0 &&
-        !(role === "teacher" && myAssignments.length === 0)) {
-
-        // Динамическая загрузка студентов при выборе группы
-        const groupSelect = document.getElementById("grade-group");
-        const studentSelect = document.getElementById("grade-student");
-
-        if (groupSelect && studentSelect) {
-            groupSelect.onchange = () => {
-                const groupId = groupSelect.value;
-                if (!groupId) {
-                    studentSelect.disabled = true;
-                    studentSelect.innerHTML = '<option value="">— сначала выберите группу —</option>';
-                    return;
-                }
-                const groupStudents = students
-                    .filter(s => s.groupId === groupId)
-                    .sort((a, b) => a.fullName.localeCompare(b.fullName));
-
-                studentSelect.disabled = false;
-                studentSelect.innerHTML = '<option value="">— выберите студента —</option>' +
-                    groupStudents.map(s => `<option value="${s.id}">${esc(s.fullName)}</option>`).join("");
-            };
-        }
-
-        document.getElementById("form-add-grade").onsubmit = async (e) => {
-            e.preventDefault();
-            const f = e.target;
-            const score = parseInt(f.score.value);
-            if (score < 10 || score > 100) {
-                flash("Балл должен быть в диапазоне 10–100", "danger");
-                return;
-            }
-
-            // Для преподавателя — проверяем что у него есть назначение на эту группу+предмет
-            if (role === "teacher") {
-                const hasAssignment = myAssignments.some(a =>
-                    a.subjectId === f.subjectId.value && a.groupId === f.groupId.value
-                );
-                if (!hasAssignment) {
-                    flash("Вы не назначены преподавать этот предмет в выбранной группе", "danger");
-                    return;
-                }
-            }
-
-            const stud = studentsById[f.studentId.value];
-            try {
-                await db.create("grades", {
-                    studentId: f.studentId.value,
-                    studentEmail: stud?.email || "",
-                    subjectId: f.subjectId.value,
-                    groupId: f.groupId.value,
-                    teacherId: currentUser.uid,
-                    score: score,
-                    date: f.date.value || new Date().toISOString().slice(0,10),
-                    type: f.type.value,
-                    comment: f.comment.value.trim()
-                });
-                flash("Оценка выставлена", "success");
-                renderGrades();
-            } catch (err) {
-                flash("Ошибка: " + err.message, "danger");
-            }
-        };
-
-        document.querySelectorAll("[data-del-grade]").forEach(btn => {
-            btn.onclick = async () => {
-                if (!confirm("Удалить оценку?")) return;
-                try {
-                    await db.remove("grades", btn.dataset.delGrade);
-                    flash("Оценка удалена", "success");
-                    renderGrades();
-                } catch (err) {
-                    flash("Ошибка: " + err.message, "danger");
-                }
-            };
-        });
-    }
 }
 
 // =====================================================
