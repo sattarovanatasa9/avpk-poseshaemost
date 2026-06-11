@@ -106,3 +106,16 @@ export function avg(numbers) {
     const sum = numbers.reduce((a, b) => a + b, 0);
     return Math.round((sum / numbers.length) * 10) / 10;
 }
+
+/**
+ * Универсальная сортировка групп: специальность → курс → название.
+ * Используется во всех выпадающих списках и таблицах для единообразия.
+ */
+export function sortGroups(groups) {
+    return [...groups].sort((a, b) => {
+        const specCmp = (a.specialty || "").localeCompare(b.specialty || "", "ru");
+        if (specCmp !== 0) return specCmp;
+        if (a.course !== b.course) return a.course - b.course;
+        return (a.name || "").localeCompare(b.name || "", "ru", { numeric: true });
+    });
+}

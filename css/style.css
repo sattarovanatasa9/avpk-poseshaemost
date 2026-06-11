@@ -738,3 +738,84 @@ body {
     font-size: 12px;
     color: #92400e;
 }
+
+/* =============================================
+   КАРТОЧКИ ПРЕПОДАВАТЕЛЕЙ С НАЗНАЧЕНИЯМИ
+   ============================================= */
+.teacher-card {
+    background: var(--light);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border-left: 4px solid var(--primary);
+}
+
+.teacher-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.assignments-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.assignment-block {
+    padding: 8px 10px;
+    background: var(--surface);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.assignment-subject {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+
+.assignment-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.assignment-group-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 3px 10px;
+    background: #e0f2f1;
+    color: var(--primary-dark);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.assignment-remove {
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+    border: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.assignment-remove:hover {
+    background: #dc2626;
+    color: white;
+}

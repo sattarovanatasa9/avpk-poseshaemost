@@ -192,7 +192,7 @@ export async function renderGroups() {
     ]);
 
     // Сортировка по курсу, затем по названию
-    groups.sort((a, b) => (a.course - b.course) || a.name.localeCompare(b.name));
+    const groupsSorted = db.sortGroups(groups);
 
     let html = `
         <div class="page-header">
@@ -244,7 +244,7 @@ export async function renderGroups() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${groups.map((g, i) => {
+                    ${groupsSorted.map((g, i) => {
                         const count = students.filter(s => s.groupId === g.id).length;
                         return `
                             <tr>
@@ -331,7 +331,7 @@ export async function renderStudents() {
                 <label>Фильтр по группе:</label>
                 <select id="filter-group">
                     <option value="">Все группы</option>
-                    ${groups.map(g => `<option value="${g.id}" ${g.id === filterGroupId ? "selected" : ""}>${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
+                    ${db.sortGroups(groups).map(g => `<option value="${g.id}" ${g.id === filterGroupId ? "selected" : ""}>${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
                 </select>
                 ${filterGroupId ? '<a href="#students" class="btn btn-sm btn-outline">Сбросить</a>' : ''}
             </form>
@@ -396,7 +396,7 @@ export async function renderStudents() {
                         <label>Группа *</label>
                         <select name="groupId" required>
                             <option value="">— выберите —</option>
-                            ${groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join("")}
+                            ${db.sortGroups(groups).map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
                         </select>
                     </div>
                     <div class="form-group">
@@ -456,27 +456,25 @@ export async function renderStudents() {
         const v = e.target.value;
         location.hash = v ? `students?group=${v}` : "students";
     };
-    if (canEdit) {
-        const formAddStudent = document.getElementById("form-add-student");
-if (formAddStudent) {
-    formAddStudent.onsubmit = async (e) => {
-        e.preventDefault();
-        const f = e.target;
-        try {
-            await db.create("students", {
-                fullName: f.fullName.value.trim(),
-                groupId: f.groupId.value,
-                email: f.email.value.trim(),
-                phone: f.phone.value.trim(),
-                birthDate: f.birthDate.value || null
-            });
-            flash("Студент добавлен", "success");
-            renderStudents();
-        } catch (err) {
-            flash("Ошибка: " + err.message, "danger");
-        }
-    };
-}
+
+    if (canEdit && groups.length > 0) {
+        document.getElementById("form-add-student").onsubmit = async (e) => {
+            e.preventDefault();
+            const f = e.target;
+            try {
+                await db.create("students", {
+                    fullName: f.fullName.value.trim(),
+                    groupId: f.groupId.value,
+                    email: f.email.value.trim(),
+                    phone: f.phone.value.trim(),
+                    birthDate: f.birthDate.value || null
+                });
+                flash("Студент добавлен", "success");
+                renderStudents();
+            } catch (err) {
+                flash("Ошибка: " + err.message, "danger");
+            }
+        };
 
         document.querySelectorAll("[data-del-student]").forEach(btn => {
             btn.onclick = async () => {
@@ -490,24 +488,24 @@ if (formAddStudent) {
                 }
             };
         });
+    }
 
-        // === Обработчик импорта из Excel ===
+    // === Обработчик импорта из Excel (работает всегда у админа, даже без групп) ===
+    if (canEdit) {
         const formImport = document.getElementById("form-import");
-        console.log("Импорт подключен");
         if (formImport) {
-            // Показ/скрытие поля пароля админа
             const checkboxAccounts = document.getElementById("import-create-accounts");
             const adminPwdGroup = document.getElementById("admin-password-group");
             checkboxAccounts.onchange = () => {
                 adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
             };
+            // Сразу применим состояние галочки
+            adminPwdGroup.style.display = checkboxAccounts.checked ? "" : "none";
 
             formImport.onsubmit = async (e) => {
-                console.log("Кнопка нажата");
                 e.preventDefault();
                 const fileInput = document.getElementById("import-file");
                 const file = fileInput.files[0];
-                console.log(file);
                 const createAccounts = checkboxAccounts.checked;
                 const adminPassword = document.getElementById("admin-password").value;
 
@@ -515,7 +513,6 @@ if (formAddStudent) {
                     flash("Выберите файл", "warning");
                     return;
                 }
-
                 if (createAccounts && !adminPassword) {
                     flash("Введите ваш пароль администратора", "warning");
                     return;
@@ -539,10 +536,8 @@ if (formAddStudent) {
 
                 try {
                     const confirmMsg = createAccounts
-                        ? `Будут импортированы студенты из файла "${file.name}" с созданием учётных записей.\n` +
-                          `Это может занять до часа. Продолжить?`
-                        : `Будут импортированы студенты из файла "${file.name}" (без учёток).\n` +
-                          `Продолжить?`;
+                        ? `Будут импортированы студенты из файла "${file.name}" с созданием учётных записей.\nЭто может занять до часа. Продолжить?`
+                        : `Будут импортированы студенты из файла "${file.name}".\nПродолжить?`;
 
                     if (!confirm(confirmMsg)) {
                         submitBtn.disabled = false;
@@ -689,12 +684,13 @@ export async function renderGrades() {
     const role = currentUser.role;
     const canEdit = role === "admin" || role === "teacher";
 
-    const [grades, students, subjects, groups, users] = await Promise.all([
+    const [grades, students, subjects, groups, users, assignments] = await Promise.all([
         db.getAll("grades"),
         db.getAll("students"),
         db.getAll("subjects"),
         db.getAll("groups"),
-        db.getAll("users")
+        db.getAll("users"),
+        db.getAll("assignments")
     ]);
 
     const groupsById = Object.fromEntries(groups.map(g => [g.id, g]));
@@ -702,18 +698,38 @@ export async function renderGrades() {
     const subjectsById = Object.fromEntries(subjects.map(s => [s.id, s]));
     const usersByUid = Object.fromEntries(users.map(u => [u.uid, u]));
 
-    // Фильтрация для студента: только его оценки
+    // === Для преподавателя — отфильтровать данные по его назначениям ===
+    let myAssignments = [];
+    let mySubjectIds = new Set();
+    let myGroupIds = new Set();
+    let myStudents = students;
+    let mySubjects = subjects;
+
+    if (role === "teacher") {
+        myAssignments = assignments.filter(a => a.teacherId === currentUser.uid);
+        mySubjectIds = new Set(myAssignments.map(a => a.subjectId));
+        myGroupIds = new Set(myAssignments.map(a => a.groupId));
+        myStudents = students.filter(s => myGroupIds.has(s.groupId));
+        mySubjects = subjects.filter(s => mySubjectIds.has(s.id));
+    }
+
+    // Фильтрация показываемых оценок
     let displayed = grades;
     if (role === "student") {
         displayed = grades.filter(g => g.studentEmail === currentUser.email);
+    } else if (role === "teacher") {
+        displayed = grades.filter(g => g.teacherId === currentUser.uid);
     }
-    // Сортировка: сначала новые
     displayed.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
     let html = `
         <div class="page-header">
             <h1>Оценки</h1>
-            <p class="muted">${role === "student" ? "Мои оценки" : `Всего записей: ${displayed.length}`}</p>
+            <p class="muted">${
+                role === "student" ? "Мои оценки" :
+                role === "teacher" ? `Мои оценки · ${displayed.length} записей · ${myAssignments.length} назначений` :
+                `Всего записей: ${displayed.length}`
+            }</p>
         </div>
 
         <div class="card">
@@ -729,7 +745,18 @@ export async function renderGrades() {
     `;
 
     if (canEdit) {
-        if (students.length === 0 || subjects.length === 0) {
+        // Преподавателю — проверим что ему вообще назначили предметы
+        if (role === "teacher" && myAssignments.length === 0) {
+            html += `
+                <div class="card">
+                    <div class="alert alert-warning">
+                        <strong>Вам ещё не назначены предметы и группы.</strong><br>
+                        Обратитесь к администратору, чтобы он назначил вам предметы и группы,
+                        в которых вы преподаёте.
+                    </div>
+                </div>
+            `;
+        } else if (students.length === 0 || subjects.length === 0) {
             html += `
                 <div class="card">
                     <div class="alert alert-warning">
@@ -740,24 +767,39 @@ export async function renderGrades() {
                 </div>
             `;
         } else {
+            // Подготовим список групп для фильтра в форме
+            // Для преподавателя — только его группы, для админа — все
+            const availableGroups = role === "teacher"
+                ? db.sortGroups(groups.filter(g => myGroupIds.has(g.id)))
+                : db.sortGroups(groups);
+
+            // Список предметов
+            const availableSubjects = role === "teacher"
+                ? [...mySubjects].sort((a,b) => a.name.localeCompare(b.name))
+                : [...subjects].sort((a,b) => a.name.localeCompare(b.name));
+
             html += `
                 <div class="card">
-                    <h2>Выставить оценку</h2>
+                    <h2>📝 Выставить оценку</h2>
                     <form id="form-add-grade" class="form-grid">
-                        <div class="form-group form-group-wide">
+                        <div class="form-group">
+                            <label>Группа *</label>
+                            <select name="groupId" id="grade-group" required>
+                                <option value="">— выберите группу —</option>
+                                ${availableGroups.map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label>Студент *</label>
-                            <select name="studentId" required>
-                                <option value="">— выберите студента —</option>
-                                ${students.sort((a,b) => a.fullName.localeCompare(b.fullName)).map(s =>
-                                    `<option value="${s.id}">${esc(s.fullName)} (${esc(groupsById[s.groupId]?.name || "—")})</option>`
-                                ).join("")}
+                            <select name="studentId" id="grade-student" required disabled>
+                                <option value="">— сначала выберите группу —</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label>Предмет *</label>
-                            <select name="subjectId" required>
-                                <option value="">— выберите —</option>
-                                ${subjects.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+                            <select name="subjectId" id="grade-subject" required ${role === "teacher" && availableSubjects.length === 0 ? "disabled" : ""}>
+                                <option value="">— выберите предмет —</option>
+                                ${availableSubjects.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
                             </select>
                         </div>
                         <div class="form-group">
@@ -835,7 +877,31 @@ export async function renderGrades() {
 
     content().innerHTML = html;
 
-    if (canEdit && students.length > 0 && subjects.length > 0) {
+    if (canEdit && students.length > 0 && subjects.length > 0 &&
+        !(role === "teacher" && myAssignments.length === 0)) {
+
+        // Динамическая загрузка студентов при выборе группы
+        const groupSelect = document.getElementById("grade-group");
+        const studentSelect = document.getElementById("grade-student");
+
+        if (groupSelect && studentSelect) {
+            groupSelect.onchange = () => {
+                const groupId = groupSelect.value;
+                if (!groupId) {
+                    studentSelect.disabled = true;
+                    studentSelect.innerHTML = '<option value="">— сначала выберите группу —</option>';
+                    return;
+                }
+                const groupStudents = students
+                    .filter(s => s.groupId === groupId)
+                    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+                studentSelect.disabled = false;
+                studentSelect.innerHTML = '<option value="">— выберите студента —</option>' +
+                    groupStudents.map(s => `<option value="${s.id}">${esc(s.fullName)}</option>`).join("");
+            };
+        }
+
         document.getElementById("form-add-grade").onsubmit = async (e) => {
             e.preventDefault();
             const f = e.target;
@@ -844,12 +910,25 @@ export async function renderGrades() {
                 flash("Балл должен быть в диапазоне 10–100", "danger");
                 return;
             }
+
+            // Для преподавателя — проверяем что у него есть назначение на эту группу+предмет
+            if (role === "teacher") {
+                const hasAssignment = myAssignments.some(a =>
+                    a.subjectId === f.subjectId.value && a.groupId === f.groupId.value
+                );
+                if (!hasAssignment) {
+                    flash("Вы не назначены преподавать этот предмет в выбранной группе", "danger");
+                    return;
+                }
+            }
+
             const stud = studentsById[f.studentId.value];
             try {
                 await db.create("grades", {
                     studentId: f.studentId.value,
                     studentEmail: stud?.email || "",
                     subjectId: f.subjectId.value,
+                    groupId: f.groupId.value,
                     teacherId: currentUser.uid,
                     score: score,
                     date: f.date.value || new Date().toISOString().slice(0,10),
@@ -1126,47 +1205,174 @@ export async function renderReports() {
 // СТРАНИЦА: Преподаватели (для админа)
 // =====================================================
 export async function renderTeachers() {
-    const users = await db.getAll("users");
+    const [users, subjects, groups, assignments] = await Promise.all([
+        db.getAll("users"),
+        db.getAll("subjects"),
+        db.getAll("groups"),
+        db.getAll("assignments")
+    ]);
+
     const teachers = users.filter(u => u.role === "teacher");
     teachers.sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+    const subjectsById = Object.fromEntries(subjects.map(s => [s.id, s]));
+    const groupsById = Object.fromEntries(groups.map(g => [g.id, g]));
+    const groupsSorted = db.sortGroups(groups);
+    const subjectsSorted = [...subjects].sort((a,b) => a.name.localeCompare(b.name));
 
     let html = `
         <div class="page-header">
             <h1>Преподаватели</h1>
-            <p class="muted">Всего: ${teachers.length}</p>
+            <p class="muted">Всего: ${teachers.length} · Назначений: ${assignments.length}</p>
         </div>
 
         <div class="card">
             <p class="muted">
-                ℹ️ Преподаватели регистрируются самостоятельно через форму регистрации
-                на главной странице, выбрав роль «Преподаватель». Здесь отображается список
-                всех зарегистрированных преподавателей.
+                ℹ️ Преподаватели регистрируются самостоятельно через форму регистрации,
+                выбрав роль «Преподаватель». Здесь администратор назначает им предметы
+                и группы, в которых они преподают.
             </p>
         </div>
-
-        <div class="card">
     `;
 
     if (teachers.length === 0) {
-        html += `<p class="muted text-center" style="padding:30px">Преподаватели ещё не зарегистрированы.</p>`;
+        html += `<div class="card"><p class="muted text-center" style="padding:30px">Преподаватели ещё не зарегистрированы.</p></div>`;
+        content().innerHTML = html;
+        return;
+    }
+
+    if (subjects.length === 0 || groups.length === 0) {
+        html += `<div class="card"><div class="alert alert-warning">
+            Для назначений нужны предметы и группы.
+            ${subjects.length === 0 ? '<br>→ <a href="#subjects">Добавьте предметы</a>' : ''}
+            ${groups.length === 0 ? '<br>→ <a href="#groups">Добавьте группы</a>' : ''}
+        </div></div>`;
     } else {
+        // Форма назначения
         html += `
-            <table class="data-table">
-                <thead><tr><th>№</th><th>ФИО</th><th>Email</th><th>Дата регистрации</th></tr></thead>
-                <tbody>
-                    ${teachers.map((t, i) => `
-                        <tr>
-                            <td>${i + 1}</td>
-                            <td><strong>${esc(t.fullName)}</strong></td>
-                            <td>${esc(t.email)}</td>
-                            <td>${t.createdAt ? new Date(t.createdAt).toLocaleDateString("ru-RU") : "—"}</td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
+            <div class="card">
+                <h2>➕ Назначить предмет преподавателю</h2>
+                <form id="form-add-assignment" class="form-grid">
+                    <div class="form-group">
+                        <label>Преподаватель *</label>
+                        <select name="teacherId" required>
+                            <option value="">— выберите —</option>
+                            ${teachers.map(t => `<option value="${t.uid}">${esc(t.fullName)}</option>`).join("")}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Предмет *</label>
+                        <select name="subjectId" required>
+                            <option value="">— выберите —</option>
+                            ${subjectsSorted.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Группа *</label>
+                        <select name="groupId" required>
+                            <option value="">— выберите —</option>
+                            ${groupsSorted.map(g => `<option value="${g.id}">${esc(g.name)} — ${esc(g.specialty)}</option>`).join("")}
+                        </select>
+                    </div>
+                    <div class="form-group form-group-full">
+                        <button type="submit" class="btn btn-primary">+ Назначить</button>
+                    </div>
+                </form>
+            </div>
         `;
     }
+
+    // Карточки преподавателей с их назначениями
+    html += `<div class="card"><h2>Преподаватели и их предметы</h2>`;
+    teachers.forEach((t, i) => {
+        const myAssignments = assignments.filter(a => a.teacherId === t.uid);
+        // Группируем по предмету
+        const bySubject = {};
+        myAssignments.forEach(a => {
+            if (!bySubject[a.subjectId]) bySubject[a.subjectId] = [];
+            bySubject[a.subjectId].push(a);
+        });
+
+        html += `
+            <div class="teacher-card">
+                <div class="teacher-card-header">
+                    <div>
+                        <strong>${i + 1}. ${esc(t.fullName)}</strong>
+                        <span class="muted" style="margin-left:8px">${esc(t.email)}</span>
+                    </div>
+                    <span class="badge">${myAssignments.length} назначений</span>
+                </div>
+
+                ${myAssignments.length === 0
+                    ? '<p class="muted" style="margin:10px 0 0;font-size:13px">Назначений пока нет</p>'
+                    : `<div class="assignments-list">
+                        ${Object.entries(bySubject).map(([subId, items]) => {
+                            const sub = subjectsById[subId];
+                            return `
+                                <div class="assignment-block">
+                                    <div class="assignment-subject">📚 ${esc(sub?.name || "Удалённый предмет")}</div>
+                                    <div class="assignment-groups">
+                                        ${items.map(a => {
+                                            const grp = groupsById[a.groupId];
+                                            return `
+                                                <span class="assignment-group-tag">
+                                                    ${esc(grp?.name || "—")}
+                                                    <button class="assignment-remove" data-del-assignment="${a.id}" title="Удалить">×</button>
+                                                </span>
+                                            `;
+                                        }).join("")}
+                                    </div>
+                                </div>
+                            `;
+                        }).join("")}
+                    </div>`
+                }
+            </div>
+        `;
+    });
     html += `</div>`;
 
     content().innerHTML = html;
+
+    // === Обработчики ===
+    const formAssign = document.getElementById("form-add-assignment");
+    if (formAssign) {
+        formAssign.onsubmit = async (e) => {
+            e.preventDefault();
+            const f = e.target;
+            const teacherId = f.teacherId.value;
+            const subjectId = f.subjectId.value;
+            const groupId = f.groupId.value;
+
+            // Проверка на дубль
+            const exists = assignments.some(a =>
+                a.teacherId === teacherId && a.subjectId === subjectId && a.groupId === groupId
+            );
+            if (exists) {
+                flash("Такое назначение уже существует", "warning");
+                return;
+            }
+
+            try {
+                await db.create("assignments", { teacherId, subjectId, groupId });
+                flash("Назначение добавлено", "success");
+                renderTeachers();
+            } catch (err) {
+                flash("Ошибка: " + err.message, "danger");
+            }
+        };
+    }
+
+    document.querySelectorAll("[data-del-assignment]").forEach(btn => {
+        btn.onclick = async () => {
+            if (!confirm("Удалить назначение?")) return;
+            try {
+                await db.remove("assignments", btn.dataset.delAssignment);
+                flash("Назначение удалено", "success");
+                renderTeachers();
+            } catch (err) {
+                flash("Ошибка: " + err.message, "danger");
+            }
+        };
+    });
 }
