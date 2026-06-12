@@ -12,7 +12,7 @@ export const SEED_TEACHERS = [
     { id: "t-saiynov",     fullName: "Сайынов Е.Е.",    login: "saiynov",     position: "Преподаватель специальных дисциплин" },
     { id: "t-rakhmetova",  fullName: "Рахметова С.Т.",  login: "rakhmetova",  position: "Преподаватель физической культуры" },
     { id: "t-nurdulinova", fullName: "Нурдулинова А.А.",login: "nurdulinova", position: "Преподаватель социальных дисциплин" },
-    { id: "t-aldekenova",  fullName: "Альдекенова А.Р.",login: "aldekenova",  position: "Классный руководитель 408 ПО" }
+    { id: "t-albergenova", fullName: "Албергенова А.Р.",login: "albergenova", position: "Классный руководитель 408 ПО" }
 ];
 
 // ===== Предметы / модули (из расписания 408 ПО) =====
@@ -97,7 +97,7 @@ export const SEED_SCHEDULE = [
 export const CLASS_HOUR = {
     day: 5,
     time: "12:55–13:35",
-    teacherId: "t-aldekenova",
+    teacherId: "t-albergenova",
     room: "208",
     name: "Классный час"
 };

@@ -14,7 +14,7 @@ import {
 } from "../data/college-data.js";
 
 const DB_KEY = "avpk_db_v1";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: исправлена фамилия классного руководителя (Албергенова А.Р.)
 
 let cache = null;
 
