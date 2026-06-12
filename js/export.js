@@ -28,7 +28,8 @@ const COLORS = {
 // № | Группа | Специальность | Курс | Студентов (начало/конец) |
 // Үлгерімі % | Қатысымы % | Білім сапасы % | Средний балл
 // =====================================================
-function buildGroupsReportRows(groups, students, grades) {
+function buildGroupsReportRows(groups, students, allGrades) {
+    const grades = allGrades.filter(g => !g.absent && g.score !== null);
     const rows = [];
 
     // Заголовок таблицы
@@ -107,7 +108,8 @@ function buildGroupsReportRows(groups, students, grades) {
 // =====================================================
 // ТАБЛИЦА ПО ПРЕДМЕТАМ
 // =====================================================
-function buildSubjectsReportRows(subjects, grades) {
+function buildSubjectsReportRows(subjects, allGrades) {
+    const grades = allGrades.filter(g => !g.absent && g.score !== null);
     const rows = [];
     rows.push([
         "№", "Предмет", "Часов",
@@ -152,7 +154,8 @@ function buildSubjectsReportRows(subjects, grades) {
 // =====================================================
 // ДЕТАЛЬНАЯ ТАБЛИЦА ПО СТУДЕНТАМ ГРУППЫ
 // =====================================================
-function buildStudentsReportRows(students, groups, grades) {
+function buildStudentsReportRows(students, groups, allGrades) {
+    const grades = allGrades.filter(g => !g.absent && g.score !== null);
     const rows = [];
     rows.push([
         "№", "ФИО", "Группа", "Специальность", "Курс",
@@ -284,6 +287,89 @@ function styleSheet(ws, totalRows, totalCols) {
     // но мы оставляем структуру корректной. Профессиональное оформление
     // открывается в Excel и применяется ручным форматированием при
     // необходимости. Цветовая разметка делается в PDF-версии.
+}
+
+// =====================================================
+// ЭКСПОРТ АНАЛИЗА ОДНОЙ ГРУППЫ В EXCEL
+// =====================================================
+// data = { group, summary, bySubject, byStudent } — подготовлено
+// страницей «Анализ успеваемости»
+// =====================================================
+export async function exportGroupAnalysis(data) {
+    if (typeof XLSX === "undefined") {
+        await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+    }
+
+    const { group, summary, bySubject, byStudent } = data;
+    const wb = XLSX.utils.book_new();
+    const period = getCurrentPeriod();
+
+    // === Лист 1: Сводка ===
+    const summaryRows = [
+        ["Актюбинский высший политехнический колледж"],
+        ["Анализ успеваемости группы " + group.name],
+        ["Итоги " + period],
+        [""],
+        ["Специальность", group.specialty],
+        ["Курс", group.course + " курс"],
+        ["Студентов", summary.students],
+        ["Оценок в журнале", summary.gradesCount],
+        ["Пропусков", summary.absents],
+        [""],
+        ["Средний балл", summary.avgScore],
+        ["Успеваемость, %", summary.uspevaemost + "%"],
+        ["Качество знаний, %", summary.kachestvo + "%"],
+        ["Посещаемость, %", summary.poseshaemost + "%"]
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+    ws1["!cols"] = [{ wch: 30 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Сводка");
+
+    // === Лист 2: По предметам ===
+    const subjRows = [
+        ["Анализ по предметам — группа " + group.name],
+        [""],
+        ["№", "Код", "Предмет/модуль", "Преподаватель", "Оценок", "Пропусков", "Средний балл", "Успеваемость %", "Качество %"]
+    ];
+    bySubject.forEach((r, i) => {
+        subjRows.push([
+            i + 1, r.sub.code, r.sub.name, r.teacher?.fullName || "—",
+            r.count, r.absents,
+            r.avg !== null ? r.avg : "—",
+            r.count ? r.pass + "%" : "—",
+            r.count ? r.quality + "%" : "—"
+        ]);
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet(subjRows);
+    ws2["!cols"] = [
+        { wch: 5 }, { wch: 8 }, { wch: 60 }, { wch: 20 },
+        { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 12 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws2, "По предметам");
+
+    // === Лист 3: Рейтинг студентов ===
+    const studRows = [
+        ["Рейтинг студентов — группа " + group.name],
+        [""],
+        ["Место", "ФИО", "Оценок", "Пропусков", "Средний балл", "Буква", "Успеваемость %", "Качество %"]
+    ];
+    byStudent.forEach((r, i) => {
+        studRows.push([
+            i + 1, r.st.fullName, r.count, r.absents,
+            r.avg !== null ? r.avg : "—",
+            r.avg !== null ? db.scoreToLetter(r.avg) : "—",
+            r.count ? r.pass + "%" : "—",
+            r.count ? r.quality + "%" : "—"
+        ]);
+    });
+    const ws3 = XLSX.utils.aoa_to_sheet(studRows);
+    ws3["!cols"] = [
+        { wch: 7 }, { wch: 38 }, { wch: 10 }, { wch: 12 },
+        { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 12 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws3, "Рейтинг студентов");
+
+    XLSX.writeFile(wb, `Анализ_${group.name.replace(/\s+/g, "_")}_${formatDateForFile()}.xlsx`);
 }
 
 // =====================================================
